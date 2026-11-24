@@ -3,7 +3,8 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
+
 import 'extended_image_provider.dart';
 
 /// Instructs Flutter to decode the image at the specified dimensions
@@ -59,6 +60,10 @@ class ExtendedResizeImage extends ImageProvider<_SizeAwareCacheKey>
   final int? height;
 
   /// The policy that determines how [width] and [height] are interpreted.
+  ///
+  /// The `cover` policy, on Flutter versions that provide it, requires positive
+  /// [width] and [height] and preserves the aspect ratio while covering the box.
+  /// [compressionRatio] and [maxBytes] retain their existing precedence.
   ///
   /// Defaults to [ResizeImagePolicy.exact].
   final ResizeImagePolicy policy;
@@ -174,6 +179,8 @@ class ExtendedResizeImage extends ImageProvider<_SizeAwareCacheKey>
             height,
             cacheRawData,
             imageCacheName,
+            policy,
+            allowUpscaling,
           ),
         );
       } else {
@@ -187,6 +194,8 @@ class ExtendedResizeImage extends ImageProvider<_SizeAwareCacheKey>
             height,
             cacheRawData,
             imageCacheName,
+            policy,
+            allowUpscaling,
           ),
         );
       }
@@ -242,8 +251,9 @@ class ExtendedResizeImage extends ImageProvider<_SizeAwareCacheKey>
       return decode(
         buffer,
         getTargetSize: (int intrinsicWidth, int intrinsicHeight) {
-          switch (policy) {
-            case ResizeImagePolicy.exact:
+          // Match names so older Flutter SDKs do not need the new cover symbol.
+          switch (policy.name) {
+            case 'exact':
               int? targetWidth = width;
               int? targetHeight = height;
 
@@ -257,7 +267,7 @@ class ExtendedResizeImage extends ImageProvider<_SizeAwareCacheKey>
               }
 
               return TargetImageSize(width: targetWidth, height: targetHeight);
-            case ResizeImagePolicy.fit:
+            case 'fit':
               final double aspectRatio = intrinsicWidth / intrinsicHeight;
               final int maxWidth = width ?? intrinsicWidth;
               final int maxHeight = height ?? intrinsicHeight;
@@ -291,10 +301,47 @@ class ExtendedResizeImage extends ImageProvider<_SizeAwareCacheKey>
               }
 
               return TargetImageSize(width: targetWidth, height: targetHeight);
+            case 'cover':
+              return _coverTargetSize(intrinsicWidth, intrinsicHeight);
+            default:
+              throw UnsupportedError(
+                'Unsupported resize policy: ${policy.name}',
+              );
           }
         },
       );
     }
+  }
+
+  TargetImageSize _coverTargetSize(int intrinsicWidth, int intrinsicHeight) {
+    final int? boxWidth = width;
+    final int? boxHeight = height;
+    if (boxWidth == null ||
+        boxHeight == null ||
+        boxWidth <= 0 ||
+        boxHeight <= 0) {
+      throw ArgumentError(
+        'The cover policy requires positive width and height.',
+      );
+    }
+    // Integer ceiling matches Flutter without rounding an exact size up by 1px.
+    final bool widthCovers =
+        boxWidth * intrinsicHeight >= boxHeight * intrinsicWidth;
+    final int targetWidth =
+        widthCovers
+            ? boxWidth
+            : (boxHeight * intrinsicWidth + intrinsicHeight - 1) ~/
+                intrinsicHeight;
+    final int targetHeight =
+        widthCovers
+            ? (boxWidth * intrinsicHeight + intrinsicWidth - 1) ~/
+                intrinsicWidth
+            : boxHeight;
+    if (!allowUpscaling &&
+        (targetWidth >= intrinsicWidth || targetHeight >= intrinsicHeight)) {
+      return const TargetImageSize();
+    }
+    return TargetImageSize(width: targetWidth, height: targetHeight);
   }
 
   /// Calculate fittest size.
@@ -321,6 +368,7 @@ class ExtendedResizeImage extends ImageProvider<_SizeAwareCacheKey>
         maxBytes == other.maxBytes &&
         width == other.width &&
         height == other.height &&
+        policy == other.policy &&
         allowUpscaling == other.allowUpscaling &&
         cacheRawData == other.cacheRawData &&
         imageCacheName == other.imageCacheName;
@@ -333,6 +381,7 @@ class ExtendedResizeImage extends ImageProvider<_SizeAwareCacheKey>
     maxBytes,
     width,
     height,
+    policy,
     allowUpscaling,
     cacheRawData,
     imageCacheName,
@@ -357,6 +406,8 @@ class _SizeAwareCacheKey {
     this._height,
     this.cacheRawData,
     this.imageCacheName,
+    this.policy,
+    this.allowUpscaling,
   );
 
   final Object _providerCacheKey;
@@ -368,6 +419,10 @@ class _SizeAwareCacheKey {
   final int? _width;
 
   final int? _height;
+
+  final ResizeImagePolicy policy;
+
+  final bool allowUpscaling;
 
   /// Whether cache raw data if you need to get raw data directly.
   /// For example, we need raw image data to edit,
@@ -390,6 +445,8 @@ class _SizeAwareCacheKey {
         other.compressionRatio == compressionRatio &&
         other._width == _width &&
         other._height == _height &&
+        other.policy == policy &&
+        other.allowUpscaling == allowUpscaling &&
         cacheRawData == other.cacheRawData &&
         imageCacheName == other.imageCacheName;
   }
@@ -401,6 +458,8 @@ class _SizeAwareCacheKey {
     compressionRatio,
     _width,
     _height,
+    policy,
+    allowUpscaling,
     cacheRawData,
     imageCacheName,
   );

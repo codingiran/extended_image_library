@@ -1,3 +1,10 @@
+## Unreleased (Zurbo compatibility fork)
+
+* Support Flutter's new `ResizeImagePolicy.cover` without requiring the new
+  enum value to exist on older Flutter SDKs.
+* Keep resize policies and upscaling options distinct in provider/cache keys.
+* Add image decoding and cache regression tests for stable and newer SDKs.
+
 ## 5.0.1
 
 * Make the package WASM compatible
